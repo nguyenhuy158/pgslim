@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pgslim"
+version = "0.1.0"
+description = "A simple tool to reduce PostgreSQL dump size by nullifying large bytea/text columns."
+readme = "README.md"
+authors = [
+    { name = "Huy Nguyen", email = "huy.ntq02@gmail.com" }
+]
+license = { text = "MIT" }
+keywords = ["postgres", "sql", "dump", "slim", "size", "bytea"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = []
+
+[project.scripts]
+pgslim = "pgslim.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pgslim"]
