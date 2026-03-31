@@ -44,7 +44,7 @@ def process_file(input_file, output_file, table_name, column_name):
 
             if in_copy_block:
                 # End of COPY block is a line with just a dot and a newline: \.
-                if line.strip() == "\\.":
+                if line.strip() == r"\.":
                     in_copy_block = False
                     col_index = -1
                     fout.write(line)
@@ -55,7 +55,7 @@ def process_file(input_file, output_file, table_name, column_name):
                     cols = line.rstrip("\n").split("\t")
                     if len(cols) > col_index:
                         # Use \N for NULL in PostgreSQL COPY format
-                        cols[col_index] = "\\N"
+                        cols[col_index] = r"\N"
                         processed_rows += 1
                     fout.write("\t".join(cols) + "\n")
                 else:
