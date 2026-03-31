@@ -71,19 +71,33 @@ def main():
     parser = argparse.ArgumentParser(
         description="Reduce PostgreSQL dump size by nullifying large columns."
     )
-    parser.add_argument("input", help="Input SQL dump file")
-    parser.add_argument("table", help="Target table name (e.g., users)")
-    parser.add_argument("column", help="Target column name (e.g., attachment)")
+
+    # We define positional arguments as optional (nargs="?") so we can check if they are provided,
+    # or fallback to the named arguments if they are used instead.
+    parser.add_argument("pos_input", nargs="?", help="Input SQL dump file")
+    parser.add_argument("pos_table", nargs="?", help="Target table name (e.g., users)")
+    parser.add_argument(
+        "pos_column", nargs="?", help="Target column name (e.g., attachment)"
+    )
+
+    parser.add_argument("-i", "--input", help="Input SQL dump file")
+    parser.add_argument("-t", "--table", help="Target table name")
+    parser.add_argument("-c", "--column", help="Target column name")
     parser.add_argument(
         "-o", "--output", help="Output SQL dump file (default: <input>_slim.sql)"
     )
 
     args = parser.parse_args()
 
-    input_file = args.input
+    # Determine values: favor named flags (-i, -t, -c) over positionals, then positionals
+    input_file = args.input if args.input else args.pos_input
+    table_name = args.table if args.table else args.pos_table
+    column_name = args.column if args.column else args.pos_column
     output_file = args.output
-    table_name = args.table
-    column_name = args.column
+
+    # Validate that we have all required parameters
+    if not input_file or not table_name or not column_name:
+        parser.error("You must provide an input file, a table name, and a column name.")
 
     if not output_file:
         if input_file.endswith(".sql"):
