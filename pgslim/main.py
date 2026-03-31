@@ -3,11 +3,15 @@ import sys
 import argparse
 
 
-def process_file(input_file, output_file, table_name, column_name):
+def process_file(input_file, output_file, table_name, column_name, verbose=False):
     """Processes the SQL dump to nullify a specific column's value in COPY blocks."""
     in_copy_block = False
     col_index = -1
     processed_rows = 0
+    line_count = 0
+
+    if verbose:
+        print(f"[*] Starting to process '{input_file}' -> '{output_file}'")
 
     # Ensure table_name is in a format matching the COPY statement (e.g., public.table_name)
     # The COPY line usually looks like: COPY public.farmlink_disbursement_bank_transaction (id, attachment, ...) FROM stdin;
@@ -17,12 +21,21 @@ def process_file(input_file, output_file, table_name, column_name):
         open(output_file, "w", encoding="utf-8") as fout,
     ):
         for line in fin:
+            line_count += 1
+            if verbose and line_count % 500000 == 0:
+                print(f"[*] Processed {line_count:,} lines...")
+
             # Detect COPY statement
             # Format: COPY public.tablename (col1, col2, ...) FROM stdin;
             if line.startswith(f"COPY {table_name}") or line.startswith(
                 f"COPY public.{table_name}"
             ):
                 in_copy_block = True
+
+                if verbose:
+                    print(
+                        f"[*] Found COPY block for table '{table_name}' at line {line_count}"
+                    )
 
                 # Parse column names from the COPY statement
                 match = re.search(r"\((.+?)\)", line)
@@ -47,6 +60,8 @@ def process_file(input_file, output_file, table_name, column_name):
                 if line.strip() == r"\.":
                     in_copy_block = False
                     col_index = -1
+                    if verbose:
+                        print(f"[*] Exited COPY block at line {line_count}")
                     fout.write(line)
                     continue
 
@@ -64,7 +79,9 @@ def process_file(input_file, output_file, table_name, column_name):
 
             fout.write(line)
 
-    print(f"[*] Done! Processed {processed_rows} rows.")
+    print(
+        f"[*] Done! Processed total {line_count:,} lines. Modified {processed_rows:,} rows."
+    )
 
 
 def main():
@@ -86,6 +103,12 @@ def main():
     parser.add_argument(
         "-o", "--output", help="Output SQL dump file (default: <input>_slim.sql)"
     )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Enable verbose output to see progress",
+    )
 
     args = parser.parse_args()
 
@@ -94,6 +117,7 @@ def main():
     table_name = args.table if args.table else args.pos_table
     column_name = args.column if args.column else args.pos_column
     output_file = args.output
+    verbose = args.verbose
 
     # Validate that we have all required parameters
     if not input_file or not table_name or not column_name:
@@ -106,7 +130,7 @@ def main():
             output_file = input_file + "_slim"
 
     try:
-        process_file(input_file, output_file, table_name, column_name)
+        process_file(input_file, output_file, table_name, column_name, verbose)
     except FileNotFoundError:
         print(f"[!] Error: File '{input_file}' not found.")
         sys.exit(1)
