@@ -5,6 +5,117 @@ import argparse
 from tqdm import tqdm
 
 
+def scan_sql_metadata(filepath):
+    """Scans the SQL file to map tables to their columns based on COPY statements."""
+    table_metadata = {}
+    total_size = os.path.getsize(filepath)
+
+    with (
+        open(filepath, "r", encoding="utf-8", errors="replace") as fin,
+        tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc="Scanning Metadata",
+        ) as pbar,
+    ):
+        for line in fin:
+            pbar.update(len(line.encode("utf-8", errors="replace")))
+            if line.startswith("COPY"):
+                # Format: COPY public.tablename (col1, col2) FROM stdin;
+                match = re.match(
+                    r"COPY\s+(?:public\.)?([^\s]+)\s*\((.+?)\)\s+FROM", line
+                )
+                if match:
+                    t_name = match.group(1).strip('"')
+                    cols = [c.strip().strip('"') for c in match.group(2).split(",")]
+                    table_metadata[t_name] = cols
+
+    return table_metadata
+
+
+def run_interactive_mode(search_dir="."):
+    import glob
+    from InquirerPy import inquirer
+
+    # Handle path expansion (e.g., ~ or .)
+    search_dir = os.path.expanduser(search_dir)
+    search_dir = os.path.abspath(search_dir)
+
+    sql_files = glob.glob(os.path.join(search_dir, "*.sql"))
+    if not sql_files:
+        print(f"[!] No .sql files found in {search_dir}")
+        return
+
+    # Relative paths for nicer display
+    rel_files = [os.path.relpath(f, search_dir) for f in sql_files]
+
+    try:
+        selected_rel_file = inquirer.fuzzy(
+            message="Select an SQL file:",
+            choices=rel_files,
+        ).execute()
+
+        if not selected_rel_file:
+            return
+
+        input_file = os.path.join(search_dir, selected_rel_file)
+
+        print(f"[*] Scanning {input_file} for tables and columns...")
+        metadata = scan_sql_metadata(input_file)
+
+        if not metadata:
+            print("[!] No COPY statements found in the file.")
+            return
+
+        tables = list(metadata.keys())
+
+        table_name = inquirer.fuzzy(
+            message="Select a table:",
+            choices=tables,
+        ).execute()
+
+        if not table_name:
+            return
+
+        columns = metadata[table_name]
+
+        column_name = inquirer.fuzzy(
+            message="Select a column to nullify:",
+            choices=columns,
+        ).execute()
+
+        if not column_name:
+            return
+
+        default_output = (
+            input_file.replace(".sql", "_slim.sql")
+            if input_file.endswith(".sql")
+            else input_file + "_slim"
+        )
+
+        output_file = inquirer.text(
+            message="Output filename:",
+            default=default_output,
+        ).execute()
+
+        if not output_file:
+            output_file = default_output
+
+        verbose = inquirer.confirm(
+            message="Enable verbose output?",
+            default=False,
+        ).execute()
+
+        process_file(input_file, output_file, table_name, column_name, verbose)
+    except (KeyboardInterrupt, EOFError):
+        print("\n[!] Operation cancelled by user.")
+        return
+    except Exception as e:
+        print(f"[!] An error occurred: {e}")
+
+
 def process_file(input_file, output_file, table_name, column_name, verbose=False):
     """Processes the SQL dump to nullify a specific column's value in COPY blocks."""
     in_copy_block = False
@@ -133,6 +244,16 @@ def main():
     column_name = args.column if args.column else args.pos_column
     output_file = args.output
     verbose = args.verbose
+
+    # Trigger interactive mode if no positional or named arguments for input, table, column are provided
+    if not input_file and not table_name and not column_name:
+        run_interactive_mode()
+        return
+
+    # Or if exactly one argument is provided and it's a directory
+    if input_file and os.path.isdir(input_file) and not table_name and not column_name:
+        run_interactive_mode(input_file)
+        return
 
     # Validate that we have all required parameters
     if not input_file or not table_name or not column_name:

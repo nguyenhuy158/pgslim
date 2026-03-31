@@ -22,25 +22,48 @@ pip install .
 
 ## Usage
 
-Provide the input SQL file, the table name, and the column you want to nullify.
+You can use `pgslim` in either **Interactive Mode** or **Command-Line Mode**.
+
+### Interactive Mode (Recommended)
+
+Simply run the tool with no arguments to start an interactive wizard. It will scan your current directory for `.sql` files, fast-scan the selected file for tables and columns, and provide searchable dropdown menus to make your selection.
 
 ```bash
-pgslim dump_old.sql farmlink_disbursement_bank_transaction attachment
+pgslim
 ```
 
-This will create a new file named `dump_old_slim.sql`.
+Alternatively, you can provide a directory path to scan for `.sql` files:
+
+```bash
+pgslim /path/to/dumps
+```
+
+### Command-Line Mode
+
+For automation or quick usage, provide the input SQL file, the table name, and the column you want to nullify directly as positional arguments or named flags.
+
+```bash
+# Using positional arguments
+pgslim dump_old.sql my_table large_column
+
+# Using named flags
+pgslim -i dump_old.sql -t my_table -c large_column -v
+```
+
+This will create a new file named `dump_old_slim.sql` (unless you specify a custom output with `-o`).
 
 ### Arguments
 
-| Positional | Description |
+| Positional / Named Flag | Description |
 |---|---|
-| `input` | Input SQL dump file (plain text format) |
-| `table` | Name of the table (e.g., `users`) |
-| `column` | Name of the column to nullify (e.g., `attachment`) |
+| `input` / `-i`, `--input` | Input SQL dump file (plain text format) |
+| `table` / `-t`, `--table` | Name of the table (e.g., `users`) |
+| `column` / `-c`, `--column` | Name of the column to nullify (e.g., `attachment`) |
 
 | Optional Flag | Description |
 |---|---|
 | `-o`, `--output` | Output SQL dump file (defaults to `<input>_slim.sql`) |
+| `-v`, `--verbose`| Enable verbose output to see detailed progress |
 
 ## How it works
 
