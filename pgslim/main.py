@@ -20,8 +20,13 @@ def scan_sql_metadata(filepath):
             desc="Scanning Metadata",
         ) as pbar,
     ):
+        batch_size = 0
         for line in fin:
-            pbar.update(len(line.encode("utf-8", errors="replace")))
+            batch_size += len(line)
+            if batch_size > 1024 * 1024:
+                pbar.update(batch_size)
+                batch_size = 0
+
             if line.startswith("COPY"):
                 # Format: COPY public.tablename (col1, col2) FROM stdin;
                 match = re.match(
@@ -31,6 +36,13 @@ def scan_sql_metadata(filepath):
                     t_name = match.group(1).strip('"')
                     cols = [c.strip().strip('"') for c in match.group(2).split(",")]
                     table_metadata[t_name] = cols
+
+        if batch_size > 0:
+            pbar.update(batch_size)
+
+        # Ensure progress bar reaches 100% since len(line) is an estimate for multi-byte chars
+        if pbar.n < pbar.total:
+            pbar.update(pbar.total - pbar.n)
 
     return table_metadata
 
@@ -142,11 +154,15 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
             desc="Processing",
         ) as pbar,
     ):
+        batch_size = 0
         for line in fin:
             line_count += 1
 
-            # Update progress bar based on the bytes size of the line
-            pbar.update(len(line.encode("utf-8", errors="replace")))
+            # Update progress bar based on approximate byte size
+            batch_size += len(line)
+            if batch_size > 1024 * 1024:  # Update every 1MB to reduce overhead
+                pbar.update(batch_size)
+                batch_size = 0
 
             if verbose and line_count % 500000 == 0:
                 pbar.write(f"[*] Processed {line_count:,} lines...")
@@ -204,6 +220,12 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
                 continue
 
             fout.write(line)
+
+        if batch_size > 0:
+            pbar.update(batch_size)
+
+        if pbar.n < pbar.total:
+            pbar.update(pbar.total - pbar.n)
 
     print(
         f"[*] Done! Processed total {line_count:,} lines. Modified {processed_rows:,} rows."
