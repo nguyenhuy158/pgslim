@@ -1,4 +1,4 @@
-.PHONY: help build install uninstall test pub clean lint
+.PHONY: help build install uninstall test pub clean lint patch minor major
 
 # Configuration
 PYTHON = python3
@@ -6,6 +6,7 @@ PIP = $(PYTHON) -m pip
 BUILD = $(PYTHON) -m build
 TWINE = $(PYTHON) -m twine
 PYTEST = $(PYTHON) -m pytest
+BUMPVER = $(PYTHON) -m bumpver
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
@@ -16,10 +17,6 @@ help: ## Show this help message
 build: clean ## Build the package (sdist and wheel)
 	$(PIP) install --upgrade build
 	$(BUILD)
-
-bump: ## Increment the patch version in pyproject.toml
-	$(PYTHON) -c "import re; p = 'pyproject.toml'; c = open(p).read(); n = re.sub(r'version = \"(\d+\.\d+\.)(\d+)\"', lambda m: f'version = \"{m.group(1)}{int(m.group(2)) + 1}\"', c); open(p, 'w').write(n)"
-	@echo "Version bumped to $$(grep '^version =' pyproject.toml | sed -E 's/version = \"(.*)\"/\1/')"
 
 install: ## Install the package locally
 	$(PIP) install .
@@ -42,17 +39,16 @@ pub: build ## Build and upload the package to PyPI
 	$(PIP) install --upgrade twine
 	$(TWINE) upload dist/*
 
-patch: ## Bump the patch version (X.Y.Z -> X.Y.Z+1)
-	$(PYTHON) bump_version.py patch
+patch: ## Bump the patch version using bumpver (X.Y.Z -> X.Y.Z+1)
+	$(BUMPVER) update --patch
 
-minor: ## Bump the minor version (X.Y.Z -> X.Y.Z+1.0)
-	$(PYTHON) bump_version.py minor
+minor: ## Bump the minor version using bumpver (X.Y.Z -> X.Y.Z+1.0)
+	$(BUMPVER) update --minor
 
-major: ## Bump the major version (X.Y.Z -> X+1.0.0)
-	$(PYTHON) bump_version.py major
+major: ## Bump the major version using bumpver (X.Y.Z -> X+1.0.0)
+	$(BUMPVER) update --major
 
 clean: ## Remove build artifacts and temporary files
-
 	rm -rf build/
 	rm -rf dist/
 	rm -rf *.egg-info
