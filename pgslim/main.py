@@ -1,6 +1,8 @@
 import re
 import sys
+import os
 import argparse
+from tqdm import tqdm
 
 
 def process_file(input_file, output_file, table_name, column_name, verbose=False):
@@ -9,6 +11,8 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
     col_index = -1
     processed_rows = 0
     line_count = 0
+
+    total_size = os.path.getsize(input_file)
 
     if verbose:
         print(f"[*] Starting to process '{input_file}' -> '{output_file}'")
@@ -19,11 +23,22 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
     with (
         open(input_file, "r", encoding="utf-8", errors="replace") as fin,
         open(output_file, "w", encoding="utf-8") as fout,
+        tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc="Processing",
+        ) as pbar,
     ):
         for line in fin:
             line_count += 1
+
+            # Update progress bar based on the bytes size of the line
+            pbar.update(len(line.encode("utf-8", errors="replace")))
+
             if verbose and line_count % 500000 == 0:
-                print(f"[*] Processed {line_count:,} lines...")
+                pbar.write(f"[*] Processed {line_count:,} lines...")
 
             # Detect COPY statement
             # Format: COPY public.tablename (col1, col2, ...) FROM stdin;
@@ -33,7 +48,7 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
                 in_copy_block = True
 
                 if verbose:
-                    print(
+                    pbar.write(
                         f"[*] Found COPY block for table '{table_name}' at line {line_count}"
                     )
 
@@ -43,11 +58,11 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
                     cols = [c.strip().strip('"') for c in match.group(1).split(",")]
                     if column_name in cols:
                         col_index = cols.index(column_name)
-                        print(
+                        pbar.write(
                             f"[*] Found '{column_name}' at index: {col_index} in table '{table_name}'"
                         )
                     else:
-                        print(
+                        pbar.write(
                             f"[!] Warning: Column '{column_name}' not found in the COPY statement for table '{table_name}'"
                         )
                         col_index = -1
@@ -61,7 +76,7 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
                     in_copy_block = False
                     col_index = -1
                     if verbose:
-                        print(f"[*] Exited COPY block at line {line_count}")
+                        pbar.write(f"[*] Exited COPY block at line {line_count}")
                     fout.write(line)
                     continue
 

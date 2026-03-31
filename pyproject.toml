@@ -17,7 +17,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = []
+dependencies = [
+    "tqdm>=4.66.0"
+]
 
 [project.scripts]
 pgslim = "pgslim.main:main"
