@@ -22,20 +22,25 @@ pip install .
 
 ## Usage
 
-Provide the input SQL file, the output SQL file, the table name, and the column you want to nullify.
+Provide the input SQL file, the table name, and the column you want to nullify.
 
 ```bash
-pgslim -i dump_old.sql -o dump_new.sql -t farmlink_disbursement_bank_transaction -c attachment
+pgslim dump_old.sql farmlink_disbursement_bank_transaction attachment
 ```
+
+This will create a new file named `dump_old_slim.sql`.
 
 ### Arguments
 
-| Flag | Long Flag | Description |
-|---|---|---|
-| `-i` | `--input` | Input SQL dump file (plain text format) |
-| `-o` | `--output` | Output SQL dump file |
-| `-t` | `--table` | Name of the table (e.g., `users`) |
-| `-c` | `--column` | Name of the column to nullify (e.g., `attachment`) |
+| Positional | Description |
+|---|---|
+| `input` | Input SQL dump file (plain text format) |
+| `table` | Name of the table (e.g., `users`) |
+| `column` | Name of the column to nullify (e.g., `attachment`) |
+
+| Optional Flag | Description |
+|---|---|
+| `-o`, `--output` | Output SQL dump file (defaults to `<input>_slim.sql`) |
 
 ## How it works
 

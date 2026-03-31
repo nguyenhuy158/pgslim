@@ -71,21 +71,30 @@ def main():
     parser = argparse.ArgumentParser(
         description="Reduce PostgreSQL dump size by nullifying large columns."
     )
-    parser.add_argument("-i", "--input", required=True, help="Input SQL dump file")
-    parser.add_argument("-o", "--output", required=True, help="Output SQL dump file")
+    parser.add_argument("input", help="Input SQL dump file")
+    parser.add_argument("table", help="Target table name (e.g., users)")
+    parser.add_argument("column", help="Target column name (e.g., attachment)")
     parser.add_argument(
-        "-t", "--table", required=True, help="Target table name (e.g., users)"
-    )
-    parser.add_argument(
-        "-c", "--column", required=True, help="Target column name (e.g., attachment)"
+        "-o", "--output", help="Output SQL dump file (default: <input>_slim.sql)"
     )
 
     args = parser.parse_args()
 
+    input_file = args.input
+    output_file = args.output
+    table_name = args.table
+    column_name = args.column
+
+    if not output_file:
+        if input_file.endswith(".sql"):
+            output_file = input_file.replace(".sql", "_slim.sql")
+        else:
+            output_file = input_file + "_slim"
+
     try:
-        process_file(args.input, args.output, args.table, args.column)
+        process_file(input_file, output_file, table_name, column_name)
     except FileNotFoundError:
-        print(f"[!] Error: File '{args.input}' not found.")
+        print(f"[!] Error: File '{input_file}' not found.")
         sys.exit(1)
     except Exception as e:
         print(f"[!] An error occurred: {e}")
