@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pgslim"
-version = "0.2.1"
+version = "0.2.2"
 description = "A simple tool to reduce PostgreSQL dump size by nullifying large bytea/text columns."
 readme = "README.md"
 authors = [
@@ -29,7 +29,7 @@ pgslim = "pgslim.main:main"
 packages = ["pgslim"]
 
 [tool.bumpver]
-current_version = "0.2.1"
+current_version = "0.2.2"
 version_pattern = "MAJOR.MINOR.PATCH"
 commit_message = "bump version {old_version} -> {new_version}"
 commit = true
