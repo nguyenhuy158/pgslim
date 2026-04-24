@@ -6,6 +6,7 @@ import tarfile
 import gzip
 import io
 from contextlib import contextmanager, ExitStack
+from importlib.metadata import version, PackageNotFoundError
 from tqdm import tqdm
 
 
@@ -291,6 +292,15 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
 def main():
     parser = argparse.ArgumentParser(
         description="Reduce PostgreSQL dump size by nullifying large columns."
+    )
+    try:
+        _version = version("pgslim")
+    except PackageNotFoundError:
+        _version = "unknown"
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_version}",
     )
 
     # We define positional arguments as optional (nargs="?") so we can check if they are provided,
