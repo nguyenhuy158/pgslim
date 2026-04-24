@@ -349,6 +349,9 @@ def main():
     elif compress and not output_file.endswith(".gz"):
         output_file += ".gz"
 
+    if output_file.endswith(".gz"):
+        compress = True
+
     try:
         process_file(input_file, output_file, table_name, column_name, verbose, compress)
     except FileNotFoundError:
