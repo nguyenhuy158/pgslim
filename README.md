@@ -6,7 +6,19 @@ This is particularly useful when you've accidentally stored large files (like im
 
 ## Installation
 
-You can install `pgslim` directly from PyPI (once uploaded):
+Run without installing, straight from PyPI with [uv](https://docs.astral.sh/uv/):
+
+```bash
+uvx pgslim
+```
+
+Or install it as a tool:
+
+```bash
+uv tool install pgslim
+```
+
+With pip:
 
 ```bash
 pip install pgslim
@@ -38,6 +50,8 @@ Alternatively, you can provide a directory path to scan for `.sql` files:
 pgslim /path/to/dumps
 ```
 
+(One-off with uv: `uvx pgslim /path/to/dumps` — same arguments everywhere.)
+
 ### Command-Line Mode
 
 For automation or quick usage, provide the input SQL file, the table name, and the column you want to nullify directly as positional arguments or named flags.
@@ -63,7 +77,9 @@ This will create a new file named `dump_old_slim.sql` (unless you specify a cust
 | Optional Flag | Description |
 |---|---|
 | `-o`, `--output` | Output SQL dump file (defaults to `<input>_slim.sql`) |
+| `-z`, `--compress` | Compress output as gzip (`.gz`) |
 | `-v`, `--verbose`| Enable verbose output to see detailed progress |
+| `--version` | Show version and exit |
 
 ## How it works
 
