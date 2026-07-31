@@ -1,13 +1,32 @@
-import re
-import sys
-import os
 import argparse
-import tarfile
 import gzip
 import io
-from contextlib import contextmanager, ExitStack
-from importlib.metadata import version, PackageNotFoundError
+import os
+import re
+import sys
+import tarfile
+from collections import defaultdict
+from contextlib import ExitStack, contextmanager
+from importlib.metadata import PackageNotFoundError, version
+
 from tqdm import tqdm
+
+# Matches a `COPY table (col1, col2) FROM stdin;` header line. Shared by the metadata
+# scanner, the plain nullify pass, and the optional Textual UI's candidate-column scan.
+COPY_HEADER_RE = re.compile(r"COPY\s+(?:public\.)?([^\s]+)\s*\((.+?)\)\s+FROM")
+
+
+def parse_copy_header(line):
+    """Parses a `COPY table (col1, col2) FROM stdin;` line.
+
+    Returns (table_name, columns) or None if the line isn't a COPY header.
+    """
+    match = COPY_HEADER_RE.match(line)
+    if not match:
+        return None
+    table_name = match.group(1).strip('"')
+    columns = [c.strip().strip('"') for c in match.group(2).split(",")]
+    return table_name, columns
 
 
 def _is_tarfile(filepath):
@@ -47,7 +66,7 @@ def _open_sql_stream(filepath):
             f.close()
     else:
         size = os.path.getsize(filepath)
-        f = open(filepath, "r", encoding="utf-8", errors="replace")
+        f = open(filepath, encoding="utf-8", errors="replace")
         try:
             yield f, size
         finally:
@@ -67,43 +86,40 @@ def scan_sql_metadata(filepath):
     """Scans the SQL file to map tables to their columns based on COPY statements."""
     table_metadata = {}
 
-    with _open_sql_stream(filepath) as (fin, total_size):
-        with tqdm(
-            total=total_size,
-            unit="B",
-            unit_scale=True,
-            unit_divisor=1024,
-            desc="Scanning Metadata",
-        ) as pbar:
-            batch_size = 0
-            for line in fin:
-                batch_size += len(line)
-                if batch_size > 1024 * 1024:
-                    pbar.update(batch_size)
-                    batch_size = 0
-
-                if line.startswith("COPY"):
-                    # Format: COPY public.tablename (col1, col2) FROM stdin;
-                    match = re.match(
-                        r"COPY\s+(?:public\.)?([^\s]+)\s*\((.+?)\)\s+FROM", line
-                    )
-                    if match:
-                        t_name = match.group(1).strip('"')
-                        cols = [c.strip().strip('"') for c in match.group(2).split(",")]
-                        table_metadata[t_name] = cols
-
-            if batch_size > 0:
+    with _open_sql_stream(filepath) as (fin, total_size), tqdm(
+        total=total_size,
+        unit="B",
+        unit_scale=True,
+        unit_divisor=1024,
+        desc="Scanning Metadata",
+    ) as pbar:
+        batch_size = 0
+        for line in fin:
+            batch_size += len(line)
+            if batch_size > 1024 * 1024:
                 pbar.update(batch_size)
+                batch_size = 0
 
-            # Ensure progress bar reaches 100%
-            if pbar.n < pbar.total:
-                pbar.update(pbar.total - pbar.n)
+            if line.startswith("COPY"):
+                # Format: COPY public.tablename (col1, col2) FROM stdin;
+                parsed = parse_copy_header(line)
+                if parsed:
+                    t_name, cols = parsed
+                    table_metadata[t_name] = cols
+
+        if batch_size > 0:
+            pbar.update(batch_size)
+
+        # Ensure progress bar reaches 100%
+        if pbar.n < pbar.total:
+            pbar.update(pbar.total - pbar.n)
 
     return table_metadata
 
 
 def run_interactive_mode(search_dir="."):
     import glob
+
     from InquirerPy import inquirer
 
     # Handle path expansion (e.g., ~ or .)
@@ -186,6 +202,24 @@ def run_interactive_mode(search_dir="."):
         return
     except Exception as e:
         print(f"[!] An error occurred: {e}")
+
+
+def run_ui_mode(input_file, output_file, compress=False):
+    """Launches the full-screen Textual column picker (optional dependency).
+
+    Import `pgslim.tui` lazily — never at module import time — so the plain CLI keeps
+    working when the optional `textual` dependency isn't installed.
+    """
+    try:
+        from .tui import run_column_picker
+    except ImportError:
+        print(
+            "[!] The interactive UI requires the 'textual' package.\n"
+            "    Install it with: uv tool install 'pgslim[tui]'  (or: pip install 'pgslim[tui]')",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    run_column_picker(input_file, output_file, compress)
 
 
 def process_file(input_file, output_file, table_name, column_name, verbose=False, compress=False):
@@ -289,6 +323,109 @@ def process_file(input_file, output_file, table_name, column_name, verbose=False
     )
 
 
+def process_file_multi(input_file, output_file, targets, verbose=False, compress=False):
+    """Processes the SQL dump, nullifying one or more (table, column) targets in a single pass.
+
+    `targets` is an iterable of (table_name, column_name) pairs, possibly spanning several
+    tables. This generalizes `process_file` (single column) for the interactive Textual
+    column picker, which lets a user select many columns at once — running one full read
+    of the dump instead of one pass per column. Returns (rows_modified, values_nulled).
+    """
+    wanted_columns = defaultdict(set)
+    for table_name, column_name in targets:
+        wanted_columns[table_name].add(column_name)
+
+    in_copy_block = False
+    null_indices = []
+    processed_rows = 0
+    total_nulled = 0
+    line_count = 0
+
+    if verbose:
+        print(f"[*] Starting to process '{input_file}' -> '{output_file}'")
+
+    with ExitStack() as stack:
+        fin, total_size = stack.enter_context(_open_sql_stream(input_file))
+        if compress:
+            fout = stack.enter_context(gzip.open(output_file, "wt", encoding="utf-8"))
+        else:
+            fout = stack.enter_context(open(output_file, "w", encoding="utf-8"))
+        pbar = stack.enter_context(tqdm(
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc="Processing",
+        ))
+        batch_size = 0
+        for line in fin:
+            line_count += 1
+
+            batch_size += len(line)
+            if batch_size > 1024 * 1024:
+                pbar.update(batch_size)
+                batch_size = 0
+
+            if verbose and line_count % 500000 == 0:
+                pbar.write(f"[*] Processed {line_count:,} lines...")
+
+            if line.startswith("COPY"):
+                in_copy_block = False
+                null_indices = []
+                parsed = parse_copy_header(line)
+                if parsed:
+                    table_name, cols = parsed
+                    wanted = wanted_columns.get(table_name)
+                    if wanted:
+                        in_copy_block = True
+                        null_indices = [i for i, c in enumerate(cols) if c in wanted]
+                        if verbose:
+                            pbar.write(
+                                f"[*] Found COPY block for table '{table_name}', "
+                                f"nullifying column indices {null_indices}"
+                            )
+                fout.write(line)
+                continue
+
+            if in_copy_block:
+                if line.strip() == r"\.":
+                    in_copy_block = False
+                    null_indices = []
+                    if verbose:
+                        pbar.write(f"[*] Exited COPY block at line {line_count}")
+                    fout.write(line)
+                    continue
+
+                if null_indices:
+                    cols = line.rstrip("\n").split("\t")
+                    row_modified = False
+                    for idx in null_indices:
+                        if idx < len(cols) and cols[idx] != r"\N":
+                            cols[idx] = r"\N"
+                            total_nulled += 1
+                            row_modified = True
+                    if row_modified:
+                        processed_rows += 1
+                    fout.write("\t".join(cols) + "\n")
+                else:
+                    fout.write(line)
+                continue
+
+            fout.write(line)
+
+        if batch_size > 0:
+            pbar.update(batch_size)
+
+        if pbar.n < pbar.total:
+            pbar.update(pbar.total - pbar.n)
+
+    print(
+        f"[*] Done! Processed total {line_count:,} lines. "
+        f"Modified {processed_rows:,} rows ({total_nulled:,} values nulled)."
+    )
+    return processed_rows, total_nulled
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Reduce PostgreSQL dump size by nullifying large columns."
@@ -329,6 +466,14 @@ def main():
         action="store_true",
         help="Enable verbose output to see progress",
     )
+    parser.add_argument(
+        "--ui",
+        action="store_true",
+        help=(
+            "Launch the full-screen interactive column picker "
+            "(scans the dump for large bytea/text columns; requires the 'tui' extra)"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -339,6 +484,18 @@ def main():
     output_file = args.output
     compress = args.compress
     verbose = args.verbose
+
+    if args.ui:
+        if not input_file:
+            parser.error("--ui requires an input file, e.g. pgslim --ui dump.sql")
+        if not output_file:
+            output_file = _default_output(input_file, compress)
+        elif compress and not output_file.endswith(".gz"):
+            output_file += ".gz"
+        if output_file.endswith(".gz"):
+            compress = True
+        run_ui_mode(input_file, output_file, compress)
+        return
 
     # Trigger interactive mode if no positional or named arguments for input, table, column are provided
     if not input_file and not table_name and not column_name:

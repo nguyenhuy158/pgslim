@@ -34,7 +34,7 @@ pip install .
 
 ## Usage
 
-You can use `pgslim` in either **Interactive Mode** or **Command-Line Mode**.
+You can use `pgslim` in **Interactive Mode**, **Command-Line Mode**, or the full-screen **Interactive UI**.
 
 ### Interactive Mode (Recommended)
 
@@ -80,6 +80,36 @@ This will create a new file named `dump_old_slim.sql` (unless you specify a cust
 | `-z`, `--compress` | Compress output as gzip (`.gz`) |
 | `-v`, `--verbose`| Enable verbose output to see detailed progress |
 | `--version` | Show version and exit |
+| `--ui` | Launch the full-screen interactive column picker (requires the `tui` extra) |
+
+### Interactive UI
+
+For dumps with many large columns spread across several tables, `--ui` opens a full-screen
+picker built with [Textual](https://textual.textualize.io/): it scans the dump in the
+background, lists every candidate `bytea`/`text` column with its estimated size, and lets
+you select several at once before writing a single slimmed-down output file.
+
+```bash
+pgslim --ui dump.sql
+```
+
+| Key | Action |
+|---|---|
+| `Space` | Toggle the highlighted column for nullification |
+| `a` | Select/deselect all candidate columns |
+| `x` | Review the selection and run (opens a confirmation dialog) |
+| `q` | Quit without writing anything |
+
+Install the extra with:
+
+```bash
+uv tool install 'pgslim[tui]'
+# or
+pip install 'pgslim[tui]'
+```
+
+Without it installed, `--ui` prints an install hint and exits — the plain CLI and
+Interactive Mode wizard above don't require Textual at all.
 
 ## How it works
 
